@@ -1,7 +1,82 @@
 import numpy as np
-import math
-#Barrier call option class
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
+#Barrier call option class
+class BarrierCall:
+    def __init__(self, S0, K, T, r, sigma, B, M=10000, N=252, random_seed=None):
+        self.S0 = S0  # Initial stock price
+        self.K = K    # Strike price
+        self.T = T    # Time to maturity
+        self.r = r    # Risk-free rate
+        self.sigma = sigma  # Volatility
+        self.B = B    # Barrier level (up-and-in)
+        self.M = M    # Number of simulations
+        self.N = N    # Number of time steps
+        self.random_seed = random_seed
+        self.paths = None  # Store simulation paths for reuse
+
+    def simulate_paths(self):
+        """Simulate GBM paths for the underlying asset."""
+        if self.random_seed is not None:
+            np.random.seed(self.random_seed)
+
+        dt = self.T / self.N
+        S = np.zeros((self.N + 1, self.M))
+        S[0] = self.S0
+
+        for t in range(1, self.N + 1):
+            Z = np.random.normal(0, 1, self.M)
+            S[t] = S[t - 1] * np.exp((self.r - 0.5 * self.sigma**2) * dt + self.sigma * np.sqrt(dt) * Z)
+
+        self.paths = S
+        return S
+
+    def price(self):
+        """Price the up-and-in barrier call option."""
+        if self.paths is None:
+            self.simulate_paths()
+
+        S = self.paths
+        breached = np.any(S > self.B, axis=0)
+        payoffs = np.where(breached, np.maximum(S[-1] - self.K, 0), 0)
+        discount_factor = np.exp(-self.r * self.T)
+        option_price = discount_factor * np.mean(payoffs)
+        return option_price
+
+    def visualize(self, max_paths=100):
+        """Visualize the GBM paths with barrier and payoff outcomes."""
+        if self.paths is None:
+            self.simulate_paths()
+
+        S = self.paths[:, :max_paths]
+        t = np.linspace(0, self.T, self.N + 1)
+        breached = np.any(S > self.B, axis=0)
+        in_the_money = (S[-1] > self.K) & breached
+
+        plt.figure(figsize=(12, 6))
+        for j in range(S.shape[1]):
+            if in_the_money[j]:
+                plt.plot(t, S[:, j], color='green', alpha=0.7, linewidth=1.0)
+            elif breached[j]:
+                plt.plot(t, S[:, j], color='red', alpha=0.5, linewidth=0.8)
+            else:
+                plt.plot(t, S[:, j], color='grey', alpha=0.3, linewidth=0.8)
+
+        plt.axhline(y=self.B, color='blue', linestyle='--', linewidth=1.5, label='Barrier Level (B)')
+
+        legend_elements = [
+            Line2D([0], [0], color='green', lw=1, label='Contributing Paths'),
+            Line2D([0], [0], color='red', lw=1, label='Breached, No Payoff'),
+            Line2D([0], [0], color='grey', lw=1, label='Never Breached'),
+            Line2D([0], [0], color='blue', lw=1, linestyle='--', label='Barrier Level (B)')
+        ]
+        plt.legend(handles=legend_elements, loc="upper left")
+        plt.title(f"Barrier Call Option Paths (S₀={self.S0}, K={self.K}, B={self.B})")
+        plt.xlabel("Time (Years)")
+        plt.ylabel("Stock Price")
+        plt.grid(True)
+        plt.show()
 
 # Zero Curve Class
 class ZeroCurve:
