@@ -1,20 +1,35 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from scipy.stats import norm
 
-#Barrier call option class
-class BarrierCall:
+#Generic European Call Option Class - will be used as a parent class that other options inherit from
+# This class uses Black Scholes pricing 
+class EuropeanCall:
+    def __init__(self, S0, K, T, r, sigma):
+        self.S0 = S0      # Initial stock price
+        self.K = K        # Strike price
+        self.T = T        # Time to maturity (in years)
+        self.r = r        # Risk-free interest rate
+        self.sigma = sigma  # Volatility of the underlying asset
+
+    def price(self):
+        """Price the European call option using the Black-Scholes formula."""
+        d1 = (np.log(self.S0 / self.K) + (self.r + 0.5 * self.sigma ** 2) * self.T) / (self.sigma * np.sqrt(self.T))
+        d2 = d1 - self.sigma * np.sqrt(self.T)
+
+        call_price = self.S0 * norm.cdf(d1) - self.K * np.exp(-self.r * self.T) * norm.cdf(d2)
+        return call_price
+
+#Barrier call option class - inherits from European call
+class BarrierCall(EuropeanCall):
     def __init__(self, S0, K, T, r, sigma, B, M=10000, N=252, random_seed=None):
-        self.S0 = S0  # Initial stock price
-        self.K = K    # Strike price
-        self.T = T    # Time to maturity
-        self.r = r    # Risk-free rate
-        self.sigma = sigma  # Volatility
-        self.B = B    # Barrier level (up-and-in)
-        self.M = M    # Number of simulations
-        self.N = N    # Number of time steps
+        super().__init__(S0, K, T, r, sigma)
+        self.B = B              # Barrier level
+        self.M = M              # Number of Monte Carlo simulations
+        self.N = N              # Number of time steps
         self.random_seed = random_seed
-        self.paths = None  # Store simulation paths for reuse
+        self.paths = None       # Cached simulated paths
 
     def simulate_paths(self):
         """Simulate GBM paths for the underlying asset."""
@@ -33,7 +48,7 @@ class BarrierCall:
         return S
 
     def price(self):
-        """Price the up-and-in barrier call option."""
+        """Override: Price the up-and-in barrier call option using Monte Carlo."""
         if self.paths is None:
             self.simulate_paths()
 
@@ -41,11 +56,10 @@ class BarrierCall:
         breached = np.any(S > self.B, axis=0)
         payoffs = np.where(breached, np.maximum(S[-1] - self.K, 0), 0)
         discount_factor = np.exp(-self.r * self.T)
-        option_price = discount_factor * np.mean(payoffs)
-        return option_price
+        return discount_factor * np.mean(payoffs)
 
     def visualize(self, max_paths=100):
-        """Visualize the GBM paths with barrier and payoff outcomes."""
+        """Visualize GBM paths with barrier and payoff outcomes."""
         if self.paths is None:
             self.simulate_paths()
 
@@ -56,12 +70,13 @@ class BarrierCall:
 
         plt.figure(figsize=(12, 6))
         for j in range(S.shape[1]):
-            if in_the_money[j]:
-                plt.plot(t, S[:, j], color='green', alpha=0.7, linewidth=1.0)
-            elif breached[j]:
-                plt.plot(t, S[:, j], color='red', alpha=0.5, linewidth=0.8)
-            else:
-                plt.plot(t, S[:, j], color='grey', alpha=0.3, linewidth=0.8)
+            color = (
+                'green' if in_the_money[j] else
+                'red' if breached[j] else
+                'grey'
+            )
+            alpha = 0.7 if in_the_money[j] else 0.5 if breached[j] else 0.3
+            plt.plot(t, S[:, j], color=color, alpha=alpha, linewidth=1.0)
 
         plt.axhline(y=self.B, color='blue', linestyle='--', linewidth=1.5, label='Barrier Level (B)')
 
