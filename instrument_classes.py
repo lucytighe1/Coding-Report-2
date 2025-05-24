@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import networkx as nx
 from matplotlib.lines import Line2D
 from scipy.stats import norm
 
@@ -20,6 +21,85 @@ class EuropeanCall:
 
         call_price = self.S0 * norm.cdf(d1) - self.K * np.exp(-self.r * self.T) * norm.cdf(d2)
         return call_price
+    
+#Generic American Put Option Class 
+# This class uses Binomial pricing 
+class AmericanPut:
+    def __init__(self, S0, K, T, r, sigma, N=100):
+        self.S0 = S0      # Initial stock price
+        self.K = K        # Strike price
+        self.T = T        # Time to maturity
+        self.r = r        # Risk-free rate
+        self.sigma = sigma  # Volatility
+        self.N = N        # Number of time steps
+
+    def price(self):
+        """Price the American put option using the binomial tree method."""
+        dt = self.T / self.N
+        u = np.exp(self.sigma * np.sqrt(dt))
+        d = 1 / u
+        p = (np.exp(self.r * dt) - d) / (u - d)
+
+        stock_tree = np.zeros((self.N + 1, self.N + 1))
+        option_tree = np.zeros((self.N + 1, self.N + 1))
+
+        # Populate stock tree
+        for i in range(self.N + 1):
+            for j in range(i + 1):
+                stock_tree[i, j] = self.S0 * (u ** j) * (d ** (i - j))
+
+        # Option value at maturity
+        for j in range(self.N + 1):
+            option_tree[self.N, j] = max(self.K - stock_tree[self.N, j], 0)
+
+        # Backward induction
+        for i in range(self.N - 1, -1, -1):
+            for j in range(i + 1):
+                hold = np.exp(-self.r * dt) * (
+                    p * option_tree[i + 1, j + 1] + (1 - p) * option_tree[i + 1, j]
+                )
+                exercise = self.K - stock_tree[i, j]
+                option_tree[i, j] = max(hold, exercise)
+
+        self.stock_tree = stock_tree
+        self.option_tree = option_tree
+        return option_tree[0, 0]
+    def visualize(self):
+        """Visualize the binomial stock and option value trees using NetworkX."""
+        G = nx.DiGraph()
+        pos = {}
+
+        for i in range(self.N + 1):
+            for j in range(i + 1):
+                node_id = f"{i},{j}"
+                stock_price = self.stock_tree[i, j]
+                option_value = self.option_tree[i, j]
+                G.add_node(node_id, stock_price=stock_price, option_value=option_value)
+                pos[node_id] = (i, j - i / 2)
+
+        for i in range(self.N):
+            for j in range(i + 1):
+                G.add_edge(f"{i},{j}", f"{i+1},{j}")
+                G.add_edge(f"{i},{j}", f"{i+1},{j+1}")
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
+        fig.suptitle(f"American Put Option - Binomial Tree (N={self.N})")
+
+        nx.draw(G, pos, ax=ax1, with_labels=False, node_size=600, node_color='skyblue', edge_color='gray')
+        labels1 = {n: f"${G.nodes[n]['stock_price']:.2f}" for n in G.nodes()}
+        nx.draw_networkx_labels(G, pos, labels=labels1, ax=ax1, font_size=8)
+        ax1.set_title("Stock Price Tree")
+
+        pos_option = {n: (x, -y) for n, (x, y) in pos.items()}
+        nx.draw(G, pos_option, ax=ax2, with_labels=False, node_size=600, node_color='salmon', edge_color='gray')
+        labels2 = {n: f"${G.nodes[n]['option_value']:.2f}" for n in G.nodes()}
+        nx.draw_networkx_labels(G, pos_option, labels=labels2, ax=ax2, font_size=8)
+        ax2.set_title("Option Value Tree")
+
+        ax1.axis('off')
+        ax2.axis('off')
+        plt.tight_layout()
+        plt.show()
 
 #Barrier call option class - inherits from European call
 class BarrierCall(EuropeanCall):
