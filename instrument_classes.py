@@ -173,44 +173,45 @@ class BarrierCall(EuropeanCall):
         plt.grid(True)
         plt.show()
 
-# European Basket Call Option
-class EuropeanBasketCallOption:
-    def __init__(self, spot_prices, volatilities, correlation_matrix, weights, strike_price,
-                 time_to_maturity, risk_free_rate, num_simulations=100000):
+class EuropeanBasketCallOption(EuropeanCall):
+    def __init__(self, spot_prices, sigmas, correlation_matrix, weights,
+                 K, T, r, M=10000, random_seed=None):
+        # Initialise parent EuropeanCall with dummy S0 and sigma (not used)
+        super().__init__(S0=None, K=K, T=T, r=r, sigma=None)
+        
         self.spot_prices = np.array(spot_prices)
-        self.volatilities = np.array(volatilities)
+        self.sigmas = np.array(sigmas)
         self.correlation_matrix = np.array(correlation_matrix)
         self.weights = np.array(weights)
-        self.strike_price = strike_price
-        self.T = time_to_maturity
-        self.r = risk_free_rate
-        self.num_simulations = num_simulations
-        self.cholesky_matrix = np.linalg.cholesky(self.correlation_matrix)
+        self.M = M
+        self.random_seed = random_seed
+        self.cholesky = np.linalg.cholesky(self.correlation_matrix)
+        self.basket_paths = None
 
-    def price(self, return_basket_paths=False):
-        n_assets = len(self.spot_prices)
-        Z = np.random.normal(size=(self.num_simulations, n_assets))
-        correlated_Z = Z @ self.cholesky_matrix.T
+    def simulate_terminal_basket(self):
+        if self.random_seed is not None:
+            np.random.seed(self.random_seed)
 
-        drift = (self.r - 0.5 * self.volatilities ** 2) * self.T
-        diffusion = self.volatilities * np.sqrt(self.T)
+        Z = np.random.normal(size=(self.M, len(self.spot_prices)))
+        correlated_Z = Z @ self.cholesky.T
+
+        drift = (self.r - 0.5 * self.sigmas**2) * self.T
+        diffusion = self.sigmas * np.sqrt(self.T)
         drift = drift[None, :]
         diffusion = diffusion[None, :]
 
         terminal_prices = self.spot_prices * np.exp(drift + correlated_Z * diffusion)
-        basket_values = terminal_prices @ self.weights
-        payoffs = np.maximum(basket_values - self.strike_price, 0)
-        discounted_payoffs = np.exp(-self.r * self.T) * payoffs
+        basket_vals = terminal_prices @ self.weights
+        self.basket_paths = basket_vals
+        return basket_vals
 
-        option_price = np.mean(discounted_payoffs)
-        std_error = np.std(discounted_payoffs) / np.sqrt(self.num_simulations)
-        ci_low = option_price - 1.96 * std_error
-        ci_high = option_price + 1.96 * std_error
+    def price(self):
+        if self.basket_paths is None:
+            self.simulate_terminal_basket()
+        payoffs = np.maximum(self.basket_paths - self.K, 0)
+        discounted = np.exp(-self.r * self.T) * payoffs
+        return np.mean(discounted)
 
-        if return_basket_paths:
-            return option_price, ci_low, ci_high, basket_values
-        else:
-            return option_price, ci_low, ci_high
 
 
 # Zero Curve Class
