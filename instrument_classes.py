@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 from matplotlib.lines import Line2D
 from scipy.stats import norm
+import math 
 
 #Generic European Call Option Class - will be used as a parent class that other options inherit from
 # This class uses Black Scholes pricing 
